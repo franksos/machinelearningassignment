@@ -1,0 +1,106 @@
+---
+title: "Prediction Assignment"
+author: "Haifeng Yu"
+date: '2017-05-29'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+As the assignment requires:
+
+"The goal of your project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases."
+
+*I encountered some issue installing 'rattle' package on my Mac. Unfortunately after reading and trying all solutions I could find online the installation was still not successful. Therefore I am using rpart.plot() instead of fancyRpartPlot from Rattle package with my analsyis.*
+
+## Load the libraries
+
+```{r library}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+```
+
+## Load and clean the data
+
+The data for this project came from this source: http://groupware.les.inf.puc-rio.br/har . The training and testing dataset given in the assignment are shown in the urls in the below R code chunk.
+
+Have a quick glance of the original training and testing csv files the variable names in the training and testing set. The variable names are mostly the same. Only the last variable in the training dataset is "classe" indicating the actual classification of the activity and in the testing dataset is "problem_id" corresponding to the index of the following prediction quiz.
+
+There are some NA strings in the format of "", "NA" or "#DIV/0!". While reading these files into data frames I did some data cleaning at the same time by removing the columns that contains NA values. The first 7 variables of both datasets are related with record index, user info or timestamp kind of information. These are are not helpful in the prediction. These variables are also removed.
+
+Finally, check to ensure "classe" is a factor variable to make the data ready.
+
+```{r data}
+trainURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFN <- "training.csv"
+testFN <- "testing.csv"
+if (!file.exists(trainFN)){download.file(trainURL, trainFN)}
+if (!file.exists(testFN)){download.file(testURL, testFN)}
+training <- read.csv(trainFN, na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(testFN, na.strings=c("NA","#DIV/0!",""))
+dim(training)
+dim(testing)
+training <- training[ ,colSums(is.na(training)) == 0]
+training <- training[, -c(1:7)]
+testing <- testing[ ,colSums(is.na(testing)) == 0]
+testing <- testing[, -c(1:7)]
+dim(training)
+dim(testing)
+class(training$classe)
+```
+
+In order to test different models, I split the training data into two datasets. I use 60% of the data for modelfitting and the rest 40% for validation.
+
+For reproducibility, I set the random number seed to 12345 in all the steps below.
+
+```{r subset}
+set.seed(12345)
+inTrain <- createDataPartition(y=training$classe, p = 0.60, list=FALSE)
+trainingsubset <- training[inTrain,]
+validatesubset <- training[-inTrain,]
+```
+
+## Prediction model1 : decision trees
+```{r rpart}
+modfit1 <- train(classe ~ .,data=trainingsubset,method="rpart")
+rpart.plot(modfit1$finalModel)
+pred1 <- predict(modfit1, validatesubset)
+cm1 <- confusionMatrix(pred1,validatesubset$classe)
+cm1$table
+cm1$overall
+```
+
+## Prediction model2 : random forest
+```{r rf}
+# I used train() with method = "rf" but it was superslow.
+# randomForest() seems much faster to create the algorithm.
+modfit2 <- randomForest(classe ~ .,data=trainingsubset,prox=TRUE,nTree=500)
+pred2 <- predict(modfit2, validatesubset)
+cm2 <- confusionMatrix(pred2,validatesubset$classe)
+cm2$table
+cm2$overall
+```
+
+## Prediction model3 : linear discriminant analysis
+```{r lda}
+modfit3 <- train(classe ~ .,data=trainingsubset,method="lda")
+pred3 <- predict(modfit3, validatesubset)
+cm3 <- confusionMatrix(pred3,validatesubset$classe)
+cm3$table
+cm3$overall
+```
+
+By comparing the accuracy of three models, random forest shows the best prediction accuracy. I choose this model as the final model to predict the classe of the 20 raws in the testing dataset which corresponds to the 20 quiz questions.
+
+```{r prediction}
+final_prediction <- predict(modfit2, testing, type="class")
+final_prediction
+```
+
